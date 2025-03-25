@@ -269,64 +269,21 @@ void bucket_sort(int *arr, int size, int container_num, int threads){//Parallel 
 
 
     //Step 3: Sort the containers and save arrays to a stack
-    stack st;
-    init_stack(&st, container_num);
-    #pragma omp parallel shared(st) num_threads(threads)
+    #pragma omp parallel num_threads(threads)
     {
         #pragma omp for
         for(int i = 0; i < container_num; i++){
             sort_container(&containers[i]);
-            #pragma omp critical
-            push_stack(&st, containers[i].values, containers[i].size);
-            containers[i].values = NULL;
         }
-
-        #pragma omp barrier
-    //Step 4: Merge the arrays inside the stack until one remains
-        #pragma omp single
-        do{
-            int size1 = st.array_sizes[st.size - 1];
-            int size2 = st.array_sizes[st.size - 2];
-            int* arr1 = pop_stack(&st);
-            int* arr2 = pop_stack(&st);
-            int* new_arr = merge_sort(arr1, arr2, size1, size2);
-            // free(arr1);
-            // free(arr2);
-            if(new_arr != arr1 && arr1 != NULL) free(arr1);
-            if(new_arr != arr2 && arr2 != NULL) free(arr2);
-            #pragma omp critical
-            push_stack(&st, new_arr, size1 + size2);
-
-        }while(st.size > 1);
-        // #pragma omp single
-        // do {
-        //     int size1, size2;
-        //     int* arr1;
-        //     int* arr2;
-
-        //     #pragma omp critical  // Protect stack access
-        //     {
-        //         if (st.size > 1) {
-        //             size1 = st.array_sizes[st.size - 1];
-        //             size2 = st.array_sizes[st.size - 2];
-        //             arr1 = pop_stack(&st);
-        //             arr2 = pop_stack(&st);
-        //         }
-        //     }
-
-        //     if (arr1 && arr2) {
-        //         int* new_arr = merge_sort(arr1, arr2, size1, size2);
-                
-        //         #pragma omp critical  // Protect push operation
-        //         push_stack(&st, new_arr, size1 + size2);
-        //         free(new_arr);
-        //     }
-        // } while(st.size > 1);
     }
-
-    int* final_sorted = pop_stack(&st);
-    memcpy(arr, final_sorted, sizeof(int) * size);//Copy the solution inplace to our array
-    free(final_sorted);
+    
+    int offset = 0;
+    for(int i = 0; i < container_num; i++){
+        if (containers[i].values != NULL && containers[i].size > 0) { // Avoid NULL dereference
+            memcpy(&arr[offset], containers[i].values, containers[i].size * sizeof(int));
+            offset += containers[i].size; // Corrected indexing
+        }
+    }
 
     //Step 5: clear the containers
     for(int i = 0; i < container_num; i++){
@@ -335,7 +292,6 @@ void bucket_sort(int *arr, int size, int container_num, int threads){//Parallel 
         }
     }
     free(containers);
-    delete_stack(&st);
 }
 
 void run_and_log_bucket(int* array, int* val_array, int size, int container_num, int threads, FILE *file){
