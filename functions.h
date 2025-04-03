@@ -148,8 +148,8 @@ void odd_even_sort(int *arr, int size, int threads){//Parallel implementation of
                 }
             }
 
-            #pragma omp atomic
-            flag |= local_flag;
+            // #pragma omp atomic
+            // flag |= local_flag;
 
             #pragma omp for
             for(int i = 0; i < size - 1; i += 2){
