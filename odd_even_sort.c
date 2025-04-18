@@ -13,7 +13,7 @@ int main(int argc, char* argv[]){
     srand(time(NULL));
 
     int arr_size = 0;
-    if(argv[1] != NULL){
+    if(argc > 1){
         arr_size = atoi(argv[1]);
     }else{
         arr_size = ARRAY_SIZE;
@@ -34,6 +34,8 @@ int main(int argc, char* argv[]){
     int *array_thread4 = (int *)malloc(arr_size * sizeof(int));
     int *array_thread8 = (int *)malloc(arr_size * sizeof(int));
     int *array_thread16 = (int *)malloc(arr_size * sizeof(int));
+    int *array_thread32 = (int *)malloc(arr_size * sizeof(int));
+    int *array_thread64 = (int *)malloc(arr_size * sizeof(int));
 
     start = omp_get_wtime();
     fill_array(array_thread, arr_size);
@@ -42,6 +44,8 @@ int main(int argc, char* argv[]){
     memcpy(array_thread4, array_thread, arr_size * sizeof(array_thread[0]));
     memcpy(array_thread8, array_thread, arr_size * sizeof(array_thread[0]));
     memcpy(array_thread16, array_thread, arr_size * sizeof(array_thread[0]));
+    memcpy(array_thread32, array_thread, arr_size * sizeof(array_thread[0]));
+    memcpy(array_thread64, array_thread, arr_size * sizeof(array_thread[0]));
     end = omp_get_wtime();
     printf("Time taken to fill and duplicate the arrays: %f.\n", end - start);
 
@@ -57,6 +61,8 @@ int main(int argc, char* argv[]){
     run_and_log_data_odd_sort(array_thread4, array_thread, arr_size, 4, file);
     run_and_log_data_odd_sort(array_thread8, array_thread, arr_size, 8, file);
     run_and_log_data_odd_sort(array_thread16, array_thread, arr_size, 16, file);
+    run_and_log_data_odd_sort(array_thread32, array_thread, arr_size, 32, file);
+    run_and_log_data_odd_sort(array_thread64, array_thread, arr_size, 64, file);
 
     fclose(file);
 
@@ -66,5 +72,7 @@ int main(int argc, char* argv[]){
     free(array_thread4);
     free(array_thread8);
     free(array_thread16);
+    free(array_thread32);
+    free(array_thread64);
     return 0;
 }

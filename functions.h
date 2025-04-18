@@ -1,3 +1,7 @@
+#define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image.h"
+#include "stb_image_write.h"
 #include <stdio.h>
 #include <time.h>
 #include <stdlib.h>
@@ -5,6 +9,7 @@
 #include <string.h>
 #include <limits.h>
 #include <math.h>
+#include <ctype.h>
 
 typedef struct{//This is a dynamic array that works like a vector: It expands when needed
     int size;
@@ -18,6 +23,14 @@ typedef struct{//This struct simulates a stack component
     int size;
     int capacity;
 } stack;
+
+typedef struct {
+    unsigned char* data;
+    char extension[8];
+    int width;
+    int height;
+    int channels;
+} Image;
 
 void init_stack(stack* st, int capacity){
     st->arrays =  (int**)malloc(sizeof(int*) * (size_t)capacity);
@@ -294,6 +307,132 @@ void bucket_sort(int *arr, int size, int container_num, int threads){//Parallel 
     free(containers);
 }
 
+void read_image(const char* path, Image* image, int grayscale){
+    char* dot = strrchr(path, '.');
+    if(!dot || dot == path){
+        printf("No extension found\n");
+    }
+    char extension[8];
+    strncpy(extension, dot + 1, sizeof(extension) - 1);
+    extension[sizeof(extension) - 1] = '\0';
+    for(int i = 0; extension[i]; i++){
+        extension[i] = tolower((unsigned char)extension[i]);
+    }
+    if(grayscale){
+        image->data = stbi_load(path, &image->width, &image->height, NULL, 1);
+        image->channels = 1;
+    }else{
+        image->data = stbi_load(path, &image->width, &image->height, NULL, 3);
+        image->channels = 3;
+    }
+    if(image->data == NULL){
+        printf("Failed to load image: %s\n", stbi_failure_reason());
+        return;
+    }
+    strncpy(image->extension, extension, sizeof(image->extension) - 1);
+}
+
+void get_image_info(Image* image){
+    printf("Image dimensions are %dx%d, has %d channel(s) and is of type %s\n", image->width, image->height, image->channels, image->extension);
+}
+
+void convert_to_grayscale(Image* image, int threads){
+    unsigned char* grayscale_data = malloc(image->width * image->height);
+    #pragma omp parallel num_threads(threads)
+    {
+        #pragma omp for
+        for(int i = 0; i < image->width * image->height; i++){
+            int r = image->data[i * 3 + 0];
+            int g = image->data[i * 3 + 1];
+            int b = image->data[i * 3 + 2];
+            grayscale_data[i] = (unsigned char)(0.3 * r + 0.59 * g + 0.11 * b);
+        }
+    }
+    free(image->data);
+    image->data = grayscale_data;
+    image->channels = 1;
+}
+
+void save_image(Image* image, const char* path){
+    stbi_write_png(path, image->width, image->height, image->channels, image->data, image->width * image->channels);
+}
+
+void free_image(Image* image){
+    stbi_image_free(image->data);
+    image->data = NULL;
+}
+
+int run_otsu(Image* image, int threads){
+    int histogram[256] = {0};
+
+    int precalculated_sums[256] = {0};
+    long long precalculated_intensities[256] = {0};
+
+    float meanB[256] = {0.0};
+    float meanF[256] = {0.0};
+    
+    int total_pixels = image->height * image->width;
+    
+    //First we calculate the histogram of the image
+    #pragma omp parallel num_threads(threads)
+    {   
+        int histogram_local[256] = {0};
+        #pragma omp for
+        for(int i = 0; i < total_pixels; i++){
+            histogram_local[image->data[i]]++;
+        }
+
+        #pragma omp critical
+        for(int i = 0; i < 256; i++){
+            histogram[i] += histogram_local[i];
+        }   
+    }
+ 
+    precalculated_sums[0] = histogram[0];
+    precalculated_intensities[0] = 0;
+    for(int i = 1; i < 256; i++){
+        precalculated_sums[i] = precalculated_sums[i - 1] + histogram[i];
+        precalculated_intensities[i] = precalculated_intensities[i - 1] + (long long)i * histogram[i];
+    }
+
+    #pragma omp parallel num_threads(threads)
+    {
+        #pragma omp for
+        for(int i = 0; i < 256; i++){
+            meanB[i] = (precalculated_sums[i] != 0) ? (double)precalculated_intensities[i] / precalculated_sums[i] : 0.0;
+            int foreground_sum = precalculated_sums[255] - precalculated_sums[i];
+            meanF[i] = (foreground_sum != 0) ? ((double)precalculated_intensities[255] - precalculated_intensities[i]) / foreground_sum : 0.0; 
+        }
+    }
+
+    float best_variance = 0;
+    int best_threshold = 0;
+    #pragma omp parallel num_threads(threads)
+    {
+        float local_best_variance = 0.0;
+        int local_best_threshold = 0;
+        #pragma omp for
+        for(int t = 0; t < 255; t++){
+            double diff = meanB[t] - meanF[t];
+            float local_variance = (precalculated_sums[t] / (float) total_pixels) * ((precalculated_sums[255] - precalculated_sums[t]) / (float) total_pixels) * diff * diff;
+            // printf("Threshold %d → Variance: %f\n", t, local_variance);
+            if(local_variance > local_best_variance){
+                local_best_variance = local_variance;
+                local_best_threshold = t;
+            }
+        }
+        #pragma omp critical
+        {
+            if(local_best_variance > best_variance){
+                best_variance = local_best_variance;
+                best_threshold = local_best_threshold;
+            }
+        }
+    }
+    
+    return best_threshold;
+}
+
 void run_and_log_bucket(int* array, int* val_array, int size, int container_num, int threads, FILE *file){
     double start, end;
     start = omp_get_wtime();
@@ -314,4 +453,14 @@ void run_and_log_data_odd_sort(int* array, int* val_array, int size, int threads
     char* validate = compare_arrays(array, val_array, size);
     printf("The array was sorted using odd-even sort with a number of thread(s) of %d  %f. %s\n", threads, final_time, validate);
     fprintf(file, "%d,%d,%f,%s\n", threads, size, final_time, "Odd_even_sort");
+}
+
+void run_and_log_otsu(Image* image, int threads, FILE* file){
+    double start, end;
+    start = omp_get_wtime();
+    int t = run_otsu(image, threads);
+    end = omp_get_wtime();
+    double final_time = end - start;
+    printf("The image was sorted in %f with %d threads. The otsu threshold found is %d.\n", final_time, threads, t);
+    fprintf(file, "%d,%f\n", threads, final_time);
 }
