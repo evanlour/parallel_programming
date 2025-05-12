@@ -42,14 +42,10 @@ void odd_even_sort_cuda(int* arr, long size, int threads){
     long int arr_size = size * sizeof(int);
     cudaMalloc((void**)&dev_arr, arr_size);
     cudaMemcpy(dev_arr, arr, arr_size, cudaMemcpyHostToDevice);
-    cudaDeviceSynchronize();
     for(int i = 0; i < size; i++){
         odd_even_sort_iteration<<<blocks,threads>>>(dev_arr, size, 0);
-        cudaDeviceSynchronize();
         odd_even_sort_iteration<<<blocks,threads>>>(dev_arr, size, 1);
-        cudaDeviceSynchronize();
     }
     cudaMemcpy(arr, dev_arr, arr_size, cudaMemcpyDeviceToHost);
     cudaFree(dev_arr);
-    cudaDeviceSynchronize();
 }

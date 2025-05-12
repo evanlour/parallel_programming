@@ -3,16 +3,27 @@
 #include <sys/time.h>
 #include "functions_cuda.h"
 
-const int THREADS_PER_BLOCK = 512;
-const long int ARRAY_SIZE = 30000;
+const long int ARRAY_SIZE = 1000000;
 int main(){
     int* arr = (int*)malloc(ARRAY_SIZE * sizeof(int));
     fill_array(arr, ARRAY_SIZE);
-    time_t start = time(0);
-    odd_even_sort_cuda(arr, ARRAY_SIZE, THREADS_PER_BLOCK);
-    time_t end = time(0);
+    int min_blocks, ideal_threads;
+    cudaOccupancyMaxPotentialBlockSize(&min_blocks, &ideal_threads, odd_even_sort_iteration, 0, 0);
+    printf("The minimal number of blocks required is %d and the optimal amount of threads is %d.\n", min_blocks, ideal_threads);
+    
+    cudaEvent_t start, end;
+    cudaEventCreate(&start);
+    cudaEventCreate(&end);
+    cudaEventRecord(start);
+    odd_even_sort_cuda(arr, ARRAY_SIZE, ideal_threads);
+    cudaEventRecord(end);
+    cudaEventSynchronize(end);
+    float time_elapsed = 0;
+    cudaEventElapsedTime(&time_elapsed, start, end);
     check_sorted(arr, ARRAY_SIZE);
-    printf("%ld\n", end - start);
+    printf("The sorting took %.4f ms.\n", time_elapsed);
+    cudaEventDestroy(start);
+    cudaEventDestroy(end);
     free(arr);
     return 0;
 }
